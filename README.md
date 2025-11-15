@@ -25,8 +25,8 @@ The project uses standard Python libraries, primarily within a Google Colab envi
 
 1.  **Clone the repository:**
     ```bash
-    git clone [(https://github.com/mohammadentezari2001/LLM-Fine-Tuning-Textual-Entailment.git)]
-    cd [LLM-Fine-Tuning-Texual-Entailment]
+    git clone https://github.com/mohammadentezari2001/LLM-Fine-Tuning-Textual-Entailment.git
+    cd LLM-Fine-Tuning-Texual-Entailment
     ```
 
 2.  **Install dependencies:**
