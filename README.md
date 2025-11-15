@@ -1,38 +1,82 @@
-# Persian Textual Entailment (FarsTail) using Gemma-3
+# Farsi Textual Entailment (FarsTail) with Gemma-3-270m
 
-This repository contains the implementation and evaluation of Large Language Model (LLM) prompting techniques (Zero-shot and Few-shot) for the Farsi Textual Entailment (Farsi NLI) task using the efficient **Gemma-3-270m** model. The goal is to classify the relationship between a *premise* and a *hypothesis* into one of three categories: Entailment ('e'), Contradiction ('c'), or Neutral ('n').
+This project explores Textual Entailment (TE) on the low-resource Farsi (Persian) language using the `google/gemma-3-270m` model. We evaluate the model's performance using three distinct approaches: Prompt Engineering (Zero-shot and Few-shot), traditional Sequence Classification Fine-tuning, and Causal Language Modeling (CL) Fine-tuning augmented with generated rationales (Chain-of-Thought style).
 
-##  Setup and Dependencies
+The goal is to analyze how different training paradigms and prompting strategies impact the TE task in a low-resource setting.
 
-This project requires Python and several libraries, notably Hugging Face Transformers and PyTorch. It was run in a Google Colab environment utilizing a GPU (T4 ) for faster inference with the Gemma model.
+## Key Components
 
-1.  **Clone the Repository (Implicit):** Assuming this `README.md` is in the root of your project directory.
-2.  **Install Libraries:**
+*   **Dataset:** [FarsTail](https://github.com/dml-qom/FarsTail.git) (A Persian Textual Entailment dataset).
+*   **Base Model:** `google/gemma-3-270m`.
+*   **Evaluation Metrics:** Precision, Recall, and Macro F1-score for the three-way classification (`e`=Entailment, `c`=Contradiction, `n`=Neutral).
 
+## 🗃️ Project Structure
+
+| File | Description | Method |
+| :--- | :--- | :--- |
+| `APE.ipynb` | **Prompt Engineering:** Evaluates the *base* `gemma-3-270m` model using various Zero-shot and Few-shot prompts on the validation set. | APE/Prompting |
+| `Fine_tuning.ipynb` | **Sequence Classification Fine-tuning:** Sets up a traditional classification head (`AutoModelForSequenceClassification`) over the Gemma backbone. It freezes the base layers and trains only the new classification head. | Seq. Classification |
+| `data_augmentation.py` | **Data Augmentation:** A Python script using a powerful external LLM (`google/gemma-3-27b-it` via OpenRouter) to generate detailed Persian *reasons* (rationales) for a subset of the training data. | Data Augmentation |
+| `APE_Fine_tuning_augmented_data.ipynb` | **CL Fine-tuning with Rationale:** Fine-tunes the `gemma-3-270m` for Causal Language Modeling (Instruction Tuning) using a prompt format that includes the generated reason before the final label: `[Input] + [Reason] + [LABEL] + [Label]`. | Causal LM / APE Fine-tuning |
+
+## 🛠️ Setup and Installation
+
+The project uses standard Python libraries, primarily within a Google Colab environment with GPU access (recommended).
+
+1.  **Clone the repository:**
     ```bash
-    !pip install transformers torch pandas accelerate
+    git clone [Your-Repo-Link]
+    cd [Your-Repo-Name]
     ```
-3.  **Hugging Face Login:** The notebook includes a cell for `huggingface_hub.notebook_login()` to access the Gemma model, which may require a Hugging Face token.
-4.  **Data Download:** The FarsTail dataset is cloned directly in the notebook:
+
+2.  **Install dependencies:**
     ```bash
-    !git clone https://github.com/dml-qom/FarsTail.git
+    !pip install -q transformers accelerate datasets pandas scikit-learn matplotlib
+    # For data_augmentation.py, you will also need:
+    # !pip install -q openai
     ```
 
-##  Methodology
+3.  **Hugging Face Login:**
+    To download the model weights and to run fine-tuning, log in to Hugging Face:
+    ```python
+    from huggingface_hub import notebook_login
+    notebook_login()
+    ```
+    *(Requires a Hugging Face token with Read access.)*
 
-### 1. Model Selection
+4.  **OpenRouter API Key (for Augmentation):**
+    The `data_augmentation.py` script requires an API key from [OpenRouter](https://openrouter.ai) to generate rationales using the large Gemma model.
 
-The project utilizes the **`google/gemma-3-270m`** model from the Hugging Face hub, loaded using `AutoModelForCausalLM` and `AutoTokenizer` with `torch.bfloat16` precision and automatically mapped to the GPU (`device_map="auto"`).
+##  Experimental Results Summary
 
-### 2. Prompting Strategies
+### 1. Prompt Engineering (APE.ipynb)
 
-Five distinct Zero-shot prompts and five distinct Few-shot prompts were defined and tested. The Few-shot prompts use 6 manually selected examples from the FarsTail training set (examples shown in the notebook output).
+The base Gemma-3-270m model, even with detailed Zero-shot and Few-shot prompting, showed extremely limited ability to perform Textual Entailment on the FarsTail dataset, indicating the need for fine-tuning or a larger base model.
 
-**Labels and Definitions (in Farsi):**
-- **e (Entailment):** The hypothesis can be logically inferred from the premise.
-- **c (Contradiction):** The hypothesis logically contradicts the premise.
-- **n (Neutral):** The hypothesis is neither necessarily true nor necessarily false based on the premise.
+| Prompt Type | Best Macro F1 |
+| :--- | :--- |
+| Zero-shot | **0.1905** (`zero_4`, `zero_5`) |
+| Few-shot (6 examples) | **0.2500** (`few_2`) |
 
-### 3. Evaluation
+### 2. Sequence Classification Fine-tuning (`Fine_tuning.ipynb`)
 
-A custom function `precision_recall_f1` was used to calculate standard metrics (Precision, Recall, F1-Score) for each class ('e', 'c', 'n') and the overall **Macro F1 score**. Evaluation was performed on a small sample (`n=5`) of the validation dataset (`val`) for initial prompt tuning.
+This experiment followed a traditional fine-tuning approach by replacing the language modeling head with a sequence classification head (`num_labels=3`). To minimize training time, only the newly added classification head was trained (i.e., freezing all base layers).
+
+| Metric | Result (Epoch 5) |
+| :--- | :--- |
+| Validation Accuracy | 0.4157 |
+| **Macro F1-score** | **0.4127** |
+| Trainable Params | 1,920 / 268,100,096 |
+
+The low performance suggests that freezing all base layers and only training the randomly initialized classification head is insufficient for adapting the model to the TE task, even on a large dataset like FarsTail.
+
+### 3. Causal LM Fine-tuning with Rationale (`APE_Fine_tuning_augmented_data.ipynb`)
+
+This experiment used a Chain-of-Thought style prompt format, augmented with generated rationales (`[Reasoning] [LABEL] [Label]`), and treated the task as a Causal Language Modeling (CLM) task.
+
+| Strategy | Trainable Parameters | Final Validation Loss |
+| :--- | :--- | :--- |
+| Last Layer Only (1 layer) | 5.57M (2.08%) | **2.761** |
+| Half Model (4 layers) | 22.29M (8.32%) | 3.057 |
+
+*Note: The model used is `google/gemma-3-270m` for CLM. The evaluation requires manual text generation and extraction, which is not fully automated in the provided notebook, but the validation loss suggests the *Last Layer Only* CLM approach performed slightly better in terms of predicting the sequence tokens.*
